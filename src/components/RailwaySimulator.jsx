@@ -41,28 +41,37 @@ const RailwaySimulator = () => {
     setLogs(prev => [{ timestamp, message, type }, ...prev].slice(0, 15));
   };
 
+  // fonction pour calculer la MA dynamique
+  const calculateMA = (train, allTrains) => {
+    // Trouver le prochain train devant (dans le sens de la marche)
+    const trainsAhead = allTrains
+      .filter(t => t.id !== train.id && t.position > train.position)
+      .sort((a, b) => a.position - b.position);
+    
+    if (trainsAhead.length > 0) {
+      const nextTrain = trainsAhead[0];
+      // MA = distance jusqu'au prochain train - marge de sécurité (150m pour distance de freinage)
+      const dynamicMA = Math.max(100, nextTrain.position - train.position - 150);
+      return dynamicMA;
+    }
+    
+    // Si pas de train devant, MA jusqu'à la fin de la ligne
+    return Math.max(100, 1200 - train.position);
+  };
+
   // scenarios de test
   const loadScenario = (scenario) => {
     setIsRunning(false);
     setLogs([]);
     
     switch(scenario) {
-      case 'collision':
-        // les deux trains vont se croiser
-        setTrains([
-          { id: 1, position: 100, speed: 80, maxSpeed: 120, color: '#ef4444', name: 'Train 1', ma: 800 },
-          { id: 2, position: 500, speed: 60, maxSpeed: 100, color: '#3b82f6', name: 'Train 2', ma: 600 }
-        ]);
-        addLog('scénario chargé: test collision - atp doit intervenir', 'info');
-        break;
-        
       case 'rattrapage':
         // train rapide rattrape le lent
         setTrains([
           { id: 1, position: 50, speed: 100, maxSpeed: 120, color: '#ef4444', name: 'Train 1', ma: 1000 },
           { id: 2, position: 400, speed: 40, maxSpeed: 60, color: '#3b82f6', name: 'Train 2', ma: 800 }
         ]);
-        addLog('scénario chargé: rattrapage - train 1 doit ralentir', 'info');
+        addLog('scénario chargé: test rattrapage - train 1 doit ralentir', 'info');
         break;
         
       case 'balise':
@@ -104,6 +113,9 @@ const RailwaySimulator = () => {
           let newSpeed = train.speed;
           let newPosition = train.position;
 
+          // Calculer MA dynamique basée sur les autres trains
+          const dynamicMA = calculateMA(train, prevTrains);
+
           // détection balise proche
           const nearBalise = balises.find(b => 
             Math.abs(train.position - b.position) < 5
@@ -137,8 +149,8 @@ const RailwaySimulator = () => {
             }
           }
           
-          // vérification ma
-          if (train.position + 50 > train.position + train.ma) {
+          // vérification MA dynamique
+          if (train.position + 50 > train.position + dynamicMA) {
             newSpeed = Math.max(0, newSpeed - 3);
             if (newSpeed === 0 && train.speed > 5) {
               addLog(`${train.name} - arrêt limite ma`, 'warning');
@@ -156,7 +168,7 @@ const RailwaySimulator = () => {
             addLog(`${train.name} - retour au départ`, 'info');
           }
           
-          return { ...train, speed: newSpeed, position: newPosition };
+          return { ...train, speed: newSpeed, position: newPosition, ma: dynamicMA };
         });
       });
       
@@ -195,7 +207,7 @@ const RailwaySimulator = () => {
     return () => clearInterval(interval);
   }, [isRunning, trains, cantons, balises]);
 
-  // rendu canvas (identique)
+  // rendu canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -323,13 +335,7 @@ const RailwaySimulator = () => {
         {/* scenarios de test */}
         <div className="mb-6 bg-slate-800 rounded-lg p-4">
           <h3 className="font-semibold mb-3">scénarios de test</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            <button
-              onClick={() => loadScenario('collision')}
-              className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded text-sm transition"
-            >
-              test collision atp
-            </button>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <button
               onClick={() => loadScenario('rattrapage')}
               className="px-3 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm transition"
@@ -441,7 +447,7 @@ const RailwaySimulator = () => {
                       <div>position: {Math.round(train.position)}m</div>
                       <div>vitesse: {Math.round(train.speed)} km/h</div>
                       <div>v. max: {train.maxSpeed} km/h</div>
-                      <div>ma: +{train.ma}m</div>
+                      <div>ma: +{Math.round(train.ma)}m</div>
                     </div>
                   </div>
                 ))}
